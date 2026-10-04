@@ -1,0 +1,127 @@
+var e=`---
+title: How Linux containers work
+---
+
+# What are containers, really?
+
+## Key concepts
+
+- [Linux kernel](https://en.wikipedia.org/wiki/Linux_kernel)
+
+    This is the "master program," responsible for interacting with the computer's hardware. The
+    complexities of sharing the CPU, RAM, and peripherals are abstracted into a UNIX-like interface
+    which is more practical for application developers. Programs talk to the kernel to access basic
+    operating system features like reading/writing files and network access.
+
+- [Process](https://en.wikipedia.org/wiki/Process_(computing))
+
+    This concept allows one computer to execute multiple programs at the same time. They share the
+    same hardware, but are generally not aware of each other. Crucially, each process gets its own
+    [memory map](https://en.wikipedia.org/wiki/Memory_map), meaning they don't (usually) have access
+    to the memory of other processes. The same logical memory address will map to different physical
+    memory addresses depending on the process.
+
+- [Thread](https://en.wikipedia.org/wiki/Thread_(computing))
+
+    A "thread of execution" is the state required to execute one sequence of instructions. They are
+    regularly paused and resumed so that thousands of them can run on the same computer. Each has
+    its own [stack](https://en.wikipedia.org/wiki/Call_stack) to store local variables and
+    [return addresses](https://en.wikipedia.org/wiki/Return_statement) for function calls. Resuming
+    a thread involves restoring the register values that were active when the thread was paused,
+    especially the [stack pointer](https://en.wikipedia.org/wiki/Stack_register) and
+    [instruction pointer](https://en.wikipedia.org/wiki/Program_counter).
+
+- [Process control block](https://en.wikipedia.org/wiki/Process_control_block)
+
+    The kernel uses this data structure to store metadata about all processes. Traditionally this
+    includes the memory map, scheduling state, and open file handles. The Linux kernel uses it to
+    provide many unique features such as those discussed in this article. The information in a
+    process's control block influences the behavior of system calls.
+
+- [System call](https://en.wikipedia.org/wiki/System_call) (syscall)
+
+    In order to talk to the kernel, applications make system calls, which jump to kernel code.
+    Typically this involves a [context switch](https://en.wikipedia.org/wiki/Context_switch), which
+    suspends execution of the current thread and enters the kernel's context, which is privileged
+    enough to access the computer's hardware directly. Each operating system (Linux, Windows, etc.)
+    provides its own set of syscalls that defines the low-level interface that programs must use for
+    input and output. Still, most programmers will never use system calls because they are behind
+    an abstraction known as the [standard library](https://en.wikipedia.org/wiki/Standard_library).
+
+- [User space](https://en.wikipedia.org/wiki/User_space_and_kernel_space)
+
+    All non-kernel processes are said to run in "user space," meaning they can't access the hardware
+    directly and instead must rely on the kernel's supported system calls.
+
+- [Container](https://en.wikipedia.org/wiki/Containerization_(computing))
+
+    In software, the word "container" is generally understood to mean distributing applications and
+    their dependencies as one unit which is, to some degree, isolated from the host system. For
+    example, [chroot jails](https://en.wikipedia.org/wiki/Chroot) and
+    [virtual machines](https://en.wikipedia.org/wiki/Virtual_machine) may be considered types of
+    containers. In this article, we focus on one particular kind: Linux containers. The kernel
+    providers certain Linux-specific system calls that make this possible.
+
+## chroot: the original container
+
+The [chroot](https://en.wikipedia.org/wiki/Chroot) command has been included in UNIX-like operating
+systems since at least the early 1980s. It changes a process's filesystem root directory, allowing
+you to, among other things, run multiple operating system versions at the same time, on the same
+kernel. For example, if you run Arch Linux, but need to run an application in an old Ubuntu version
+for compatibility reasons, you can install Ubuntu to a directory in your home and run the
+application under chroot. The term "operating system" is a little vague here; the Ubuntu kernel is
+not used; rather, its userspace components are running on the Arch Linux host.
+
+chroot has one key shortcoming that makes it dangerous: there is no isolation between the host and
+guest systems. Processes running inside chroot retain all capabilities and permissions that were
+present when the chroot system call was made. Be careful using it as a sandbox: there are lots of
+interesting ways you can get hacked or otherwise brick your system. For example, the first process
+inside any chroot usually runs as the root user, which has the ability to create device nodes and
+mount the host filesystem, bypassing the sandbox.
+
+## More namespaces are available
+
+The kernel provides a Linux-specific syscall that allows much stronger isolation between processes
+than chroot alone: [unshare](https://man7.org/linux/man-pages/man1/unshare.1.html). "filesystem" is
+but one of many namespaces available to us. Isolation happens at the process level, meaning this
+information is stored in the process's control block and applies to all descendent processes. The
+container runtimes you know and love (docker, podman) make use of this syscall when spawning new
+containers. Here's how you can approximate what 
+
+\`\`\`sh
+ROOT="$HOME/Containers/Ubuntu2404"
+
+# Unprivileged container with podman (no sudo). user/group namespace is required and handled
+# automatically. The root user inside the container mapped to an unused UID/GID on the host system.
+# The host system considers this process to run as the non-root user that launched it.
+#
+# Arguments:
+#     rootfs: first positional argument is root directory, not image
+podman run --interactive --rm --rootfs --tty "$ROOT"
+$ id
+uid=0(root) gid=0(root) groups=10(wheel)
+
+# Unprivileged container with unshare (no sudo). user/group namespace is required to become root
+# inside the container. You also need to map UIDs/GIDs inside the container to unused values on the
+# host system. The host system still considers this process to run as the user that launched it.
+#
+# Arguments:
+#     user: enable user/group ID namespace
+#     map-auto: map UIDs/GIDs to unused host UIDs/GIDs
+#     setuid: change effective UID
+#     setgid: change effective GID
+#     root: same functionality as chroot
+unshare --user --map-auto --setuid 0 --setgid 0 --root "$ROOT"
+$ id
+uid=0(root) gid=0(root) groups=10(wheel)
+\`\`\`
+
+## The actual reason we like them
+
+The isolation provided by Linux containers is helpful for both application developers and DevOps/IT.
+Unfortunately, it's considered to be "not secure enough" to isolate workloads in a multi-tenant
+environment because they would be sharing the same kernel. For this reason, cloud providers require
+your code to run in virtual machines, even if this is abstracted from the developer. Containers are
+unlikely to help with your cloud costs unless you own your own datacenter. We use them because they
+solve the release engineering problem, which is to say, how you deploy your application across...
+`;export{e as default};
